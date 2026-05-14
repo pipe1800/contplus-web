@@ -147,8 +147,16 @@ export default function CatalogoPage() {
       .from("catalogo")
       .select("*")
       .eq("cia", 1)
-      .order("cuenta");
-    setAccounts(data ?? []);
+      .order("fecha_ini", { ascending: false });
+    // Dedupe by cuenta — keep most recent fiscal year version
+    const seen = new Set<string>();
+    const unique = (data ?? []).filter((a: Account) => {
+      const key = a.cuenta.trim();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    setAccounts(unique);
     setLoading(false);
   }, [supabase]);
 
