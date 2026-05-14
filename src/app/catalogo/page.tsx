@@ -1,7 +1,19 @@
 "use client";
 
 import { createBrowserClient } from "@supabase/ssr";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
+
+// ── lazy supabase client (prevents build-time env var access) ──
+function useSupabase() {
+  return useMemo(
+    () =>
+      createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
+      ),
+    []
+  );
+}
 
 // ── types ──
 type Account = {
@@ -122,17 +134,13 @@ function AccountRow({
 
 // ── main page component ──
 export default function CatalogoPage() {
+  const supabase = useSupabase();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Account | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editAccount, setEditAccount] = useState<Account | null>(null);
   const [search, setSearch] = useState("");
-
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-  );
 
   const loadAccounts = useCallback(async () => {
     const { data } = await supabase
@@ -142,7 +150,7 @@ export default function CatalogoPage() {
       .order("cuenta");
     setAccounts(data ?? []);
     setLoading(false);
-  }, []);
+  }, [supabase]);
 
   useEffect(() => {
     loadAccounts();
@@ -226,50 +234,7 @@ export default function CatalogoPage() {
         {/* Detail Panel */}
         <div className="flex-1 overflow-y-auto p-6">
           {selected ? (
-            <div className="max-w-xl space-y-6">
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="font-mono text-sm text-zinc-500">
-                    {selected.cuenta.trim()}
-                  </div>
-                  <h2 className="text-xl font-bold text-white mt-1">
-                    {selected.nombre.trim()}
-                  </h2>
-                  <span
-                    className={`inline-block text-xs font-medium mt-2 px-2 py-0.5 rounded-full bg-zinc-800 ${
-                      TIPO_COLORS[selected.tipo] || "text-zinc-400"
-                    }`}
-                  >
-                    {TIPO_LABELS[selected.tipo] || selected.tipo}
-                  </span>
-                </div>
-                <button
-                  onClick={() => {
-                    setEditAccount(selected);
-                    setShowForm(true);
-                  }}
-                  className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
-                >
-                  Editar
-                </button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <DetailItem label="Nivel" value={String(selected.nivel)} />
-                <DetailItem
-                  label="Cuenta padre"
-                  value={selected.cuentd?.trim() === "0" ? "— Raíz —" : selected.cuentd.trim()}
-                />
-                <DetailItem
-                  label="Año fiscal"
-                  value={new Date(selected.fecha_ini).getFullYear().toString()}
-                />
-                <DetailItem label="Empresa ID" value={String(selected.cia)} />
-              </div>
-
-              {/* Balance info — fetched separately */}
-              <BalanceInfo cuenta={selected.cuenta.trim()} />
-            </div>
+            <AccountDetail account={selected} supabase={supabase} />
           ) : (
             <div className="h-full flex items-center justify-center text-zinc-600">
               <p>Selecciona una cuenta para ver sus detalles</p>
@@ -284,6 +249,7 @@ export default function CatalogoPage() {
           account={editAccount}
           companyId={1}
           accounts={accounts}
+          supabase={supabase}
           onClose={() => {
             setShowForm(false);
             setEditAccount(null);
@@ -299,7 +265,87 @@ export default function CatalogoPage() {
   );
 }
 
-// ── detail subcomponents ──
+// ── detail panel ──
+function AccountDetail({ account, supabase }: { account: Account; supabase: any }) {
+  const [balance, setBalance] = useState<any>(null);
+
+  useEffect(() => {
+    supabase
+      .from("saldos")
+      .select("cargo, abono, sald_mes, fecha")
+      .eq("cia", 1)
+      .eq("cuenta", account.cuenta.trim().padEnd(21, " "))
+      .order("fecha", { ascending: false })
+      .limit(12)
+      .then(({ data }: any) => setBalance(data));
+  }, [account.cuenta, supabase]);
+
+  return (
+    <div className="max-w-xl space-y-6">
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="font-mono text-sm text-zinc-500">{account.cuenta.trim()}</div>
+          <h2 className="text-xl font-bold text-white mt-1">{account.nombre.trim()}</h2>
+          <span
+            className={`inline-block text-xs font-medium mt-2 px-2 py-0.5 rounded-full bg-zinc-800 ${
+              TIPO_COLORS[account.tipo] || "text-zinc-400"
+            }`}
+          >
+            {TIPO_LABELS[account.tipo] || account.tipo}
+          </span>
+        </div>
+        <button
+          onClick={() => {
+            const event = new CustomEvent("edit-account", { detail: account });
+            window.dispatchEvent(event);
+          }}
+          className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+        >
+          Editar
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <DetailItem label="Nivel" value={String(account.nivel)} />
+        <DetailItem
+          label="Cuenta padre"
+          value={account.cuentd?.trim() === "0" ? "— Raíz —" : account.cuentd.trim()}
+        />
+        <DetailItem label="Año fiscal" value={new Date(account.fecha_ini).getFullYear().toString()} />
+        <DetailItem label="Empresa ID" value={String(account.cia)} />
+      </div>
+
+      {balance && balance.length > 0 && (
+        <div>
+          <h3 className="text-sm font-medium text-zinc-400 mb-3">Saldos recientes</h3>
+          <div className="space-y-1">
+            {balance.slice(0, 6).map((s: any) => (
+              <div
+                key={s.fecha}
+                className="flex items-center justify-between text-sm py-1 border-b border-zinc-800/50"
+              >
+                <span className="text-zinc-500">
+                  {new Date(s.fecha).toLocaleDateString("es-SV", { year: "numeric", month: "short" })}
+                </span>
+                <span className="font-mono text-xs text-zinc-400">
+                  DR {Number(s.cargo).toFixed(2)} / CR {Number(s.abono).toFixed(2)}
+                </span>
+                <span
+                  className={`font-mono text-sm font-medium ${
+                    Number(s.sald_mes) >= 0 ? "text-zinc-200" : "text-red-400"
+                  }`}
+                >
+                  {Number(s.sald_mes).toLocaleString("es-SV", { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DetailItem({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -309,71 +355,19 @@ function DetailItem({ label, value }: { label: string; value: string }) {
   );
 }
 
-function BalanceInfo({ cuenta }: { cuenta: string }) {
-  const [balance, setBalance] = useState<any>(null);
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-  );
-
-  useEffect(() => {
-    supabase
-      .from("saldos")
-      .select("cargo, abono, sald_mes, fecha")
-      .eq("cia", 1)
-      .eq("cuenta", cuenta.padEnd(21, " "))
-      .order("fecha", { ascending: false })
-      .limit(12)
-      .then(({ data }) => setBalance(data));
-  }, [cuenta]);
-
-  if (!balance || balance.length === 0) return null;
-
-  return (
-    <div>
-      <h3 className="text-sm font-medium text-zinc-400 mb-3">Saldos recientes</h3>
-      <div className="space-y-1">
-        {balance.slice(0, 6).map((s: any) => (
-          <div
-            key={s.fecha}
-            className="flex items-center justify-between text-sm py-1 border-b border-zinc-800/50"
-          >
-            <span className="text-zinc-500">
-              {new Date(s.fecha).toLocaleDateString("es-SV", {
-                year: "numeric",
-                month: "short",
-              })}
-            </span>
-            <span className="font-mono text-xs text-zinc-400">
-              DR {Number(s.cargo).toFixed(2)} / CR {Number(s.abono).toFixed(2)}
-            </span>
-            <span
-              className={`font-mono text-sm font-medium ${
-                Number(s.sald_mes) >= 0 ? "text-zinc-200" : "text-red-400"
-              }`}
-            >
-              {Number(s.sald_mes).toLocaleString("es-SV", {
-                minimumFractionDigits: 2,
-              })}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ── form dialog ──
 function AccountFormDialog({
   account,
   companyId,
   accounts,
+  supabase,
   onClose,
   onSaved,
 }: {
   account: Account | null;
   companyId: number;
   accounts: Account[];
+  supabase: any;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -385,12 +379,14 @@ function AccountFormDialog({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-  );
+  useEffect(() => {
+    if (account) {
+      window.addEventListener("edit-account", ((e: CustomEvent) => {
+        // handled by parent
+      }) as EventListener);
+    }
+  }, [account]);
 
-  // When parent changes, auto-set nivel
   const handleParentChange = (parentCuenta: string) => {
     setCuentd(parentCuenta);
     if (parentCuenta === "0") {
@@ -408,7 +404,6 @@ function AccountFormDialog({
     const paddedParent = cuentd.padEnd(21, " ");
 
     if (account) {
-      // Update — insert new version for the fiscal year
       const { error: err } = await supabase.from("catalogo").upsert({
         cuenta: padded,
         nombre,
@@ -443,9 +438,7 @@ function AccountFormDialog({
           <h2 className="text-lg font-bold text-white">
             {account ? "Editar cuenta" : "Nueva cuenta"}
           </h2>
-          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300">
-            ✕
-          </button>
+          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300">✕</button>
         </div>
 
         <div className="space-y-3">
@@ -498,13 +491,11 @@ function AccountFormDialog({
               className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
             >
               <option value="0">— Raíz (sin padre) —</option>
-              {accounts
-                .filter((a) => a.nivel < 4)
-                .map((a) => (
-                  <option key={a.cuenta} value={a.cuenta.trim()}>
-                    {a.cuenta.trim()} — {a.nombre.trim()}
-                  </option>
-                ))}
+              {accounts.filter((a) => a.nivel < 4).map((a) => (
+                <option key={a.cuenta} value={a.cuenta.trim()}>
+                  {a.cuenta.trim()} — {a.nombre.trim()}
+                </option>
+              ))}
             </select>
           </div>
         </div>
