@@ -32,11 +32,14 @@ export default async function DashboardPage() {
           <h1 className="text-2xl font-bold text-white">ContPlus</h1>
           <p className="text-sm text-zinc-400">{user.email}</p>
         </div>
-        <form action="/auth/signout" method="post">
-          <button className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors">
+        <div className="flex items-center gap-3">
+          <a href="/catalogo" className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors">
+            Catálogo →
+          </a>
+          <a href="/auth/signout" className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors">
             Cerrar sesión
-          </button>
-        </form>
+          </a>
+        </div>
       </div>
 
       {/* Company Selector */}
@@ -90,22 +93,33 @@ export default async function DashboardPage() {
         </h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { name: "Catálogo de Cuentas", icon: "📋" },
-            { name: "Libro Diario", icon: "📖" },
-            { name: "Bancos y Cheques", icon: "🏦" },
-            { name: "IVA y Retenciones", icon: "🧾" },
-            { name: "Mayor General", icon: "📊" },
-            { name: "Balances", icon: "⚖️" },
-            { name: "Estado de Resultados", icon: "📈" },
-            { name: "Reportes", icon: "📑" },
+            { name: "Catálogo de Cuentas", icon: "📋", href: "/catalogo" },
+            { name: "Libro Diario", icon: "📖", href: null },
+            { name: "Bancos y Cheques", icon: "🏦", href: null },
+            { name: "IVA y Retenciones", icon: "🧾", href: null },
+            { name: "Mayor General", icon: "📊", href: null },
+            { name: "Balances", icon: "⚖️", href: null },
+            { name: "Estado de Resultados", icon: "📈", href: null },
+            { name: "Reportes", icon: "📑", href: null },
           ].map((mod) => (
-            <div
-              key={mod.name}
-              className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 hover:border-zinc-700 transition-colors cursor-pointer"
-            >
-              <div className="text-lg mb-2">{mod.icon}</div>
-              <p className="text-sm text-zinc-300">{mod.name}</p>
-            </div>
+            mod.href ? (
+              <a
+                key={mod.name}
+                href={mod.href}
+                className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 hover:border-zinc-700 transition-colors cursor-pointer block"
+              >
+                <div className="text-lg mb-2">{mod.icon}</div>
+                <p className="text-sm text-zinc-300">{mod.name}</p>
+              </a>
+            ) : (
+              <div
+                key={mod.name}
+                className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 hover:border-zinc-700 transition-colors cursor-not-allowed opacity-50"
+              >
+                <div className="text-lg mb-2">{mod.icon}</div>
+                <p className="text-sm text-zinc-300">{mod.name}</p>
+              </div>
+            )
           ))}
         </div>
       </div>
