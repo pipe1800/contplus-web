@@ -1,101 +1,123 @@
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase-server";
+import { redirect } from "next/navigation";
 
-export default async function Home() {
-  // Test Supabase connection: count companies & document types
-  const { count: ciaCount } = await supabase
-    .from("cia")
-    .select("*", { count: "exact", head: true });
+export default async function DashboardPage() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  const { count: catalogoCount } = await supabase
-    .from("catalogo")
-    .select("*", { count: "exact", head: true });
+  if (!user) redirect("/login");
 
-  const { data: tiposDoc } = await supabase
-    .from("i_tipos_doc")
-    .select("nombre, muestra, porc_iva");
+  // Get user's companies via company_members
+  const { data: memberships } = await supabase
+    .from("company_members")
+    .select("company_id, role, cia:company_id(id, nombre)")
+    .eq("user_id", user.id);
 
-  const dbStatus = ciaCount !== null ? "Conectado" : "Error de conexión";
+  const companies = memberships?.map((m: any) => m.cia) ?? [];
+
+  // If no companies yet, fetch all companies (admin mode for initial setup)
+  const { data: allCompanies } = companies.length === 0
+    ? await supabase.from("cia").select("id, nombre")
+    : { data: null };
+
+  const displayCompanies = companies.length > 0 ? companies : (allCompanies ?? []);
 
   return (
-    <main className="flex-1 flex flex-col items-center justify-center p-8">
-      <div className="max-w-2xl w-full space-y-8">
-        {/* Header */}
-        <div className="text-center space-y-3">
-          <h1 className="text-4xl font-bold tracking-tight text-white">
-            ContPlus
-          </h1>
-          <p className="text-zinc-400 text-lg">
-            Sistema de Contabilidad — El Salvador
-          </p>
+    <main className="flex-1 p-6 max-w-6xl mx-auto w-full space-y-8">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white">ContPlus</h1>
+          <p className="text-sm text-zinc-400">{user.email}</p>
         </div>
+        <form action="/auth/signout" method="post">
+          <button className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors">
+            Cerrar sesión
+          </button>
+        </form>
+      </div>
 
-        {/* Database Status */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 space-y-4">
-          <div className="flex items-center gap-3">
-            <span
-              className={`h-3 w-3 rounded-full ${
-                dbStatus === "Conectado" ? "bg-emerald-500 animate-pulse" : "bg-red-500"
-              }`}
-            />
-            <h2 className="text-lg font-semibold text-white">
-              Base de Datos: {dbStatus}
-            </h2>
+      {/* Company Selector */}
+      <div className="space-y-3">
+        <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">
+          Empresas
+        </h2>
+        {displayCompanies.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-zinc-800 bg-zinc-900/50 p-8 text-center">
+            <p className="text-zinc-500">No tienes empresas asignadas</p>
+            <p className="text-xs text-zinc-600 mt-1">
+              Un administrador debe agregarte a una empresa
+            </p>
           </div>
-
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div className="rounded-lg bg-zinc-800/50 p-3">
-              <div className="text-zinc-400">Empresas</div>
-              <div className="text-2xl font-bold text-white">{ciaCount ?? "—"}</div>
-            </div>
-            <div className="rounded-lg bg-zinc-800/50 p-3">
-              <div className="text-zinc-400">Cuentas Contables</div>
-              <div className="text-2xl font-bold text-white">{catalogoCount ?? "—"}</div>
-            </div>
-          </div>
-
-          {/* IVA Document Types */}
-          {tiposDoc && tiposDoc.length > 0 && (
-            <div>
-              <div className="text-sm text-zinc-400 mb-2">Tipos de Documento IVA</div>
-              <div className="flex flex-wrap gap-2">
-                {tiposDoc.map((d) => (
-                  <span
-                    key={d.muestra}
-                    className="rounded-full bg-blue-500/10 border border-blue-500/20 px-3 py-1 text-xs text-blue-300"
-                  >
-                    {d.nombre} ({d.muestra}) — {d.porc_iva}% IVA
-                  </span>
-                ))}
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {displayCompanies.map((c: any) => (
+              <div
+                key={c.id}
+                className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 hover:border-zinc-700 transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 font-bold text-sm">
+                    {c.nombre?.charAt(0) ?? "C"}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-white truncate">
+                      {c.nombre?.trim()}
+                    </p>
+                    <p className="text-xs text-zinc-500">ID: {c.id}</p>
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            ))}
+          </div>
+        )}
+      </div>
 
-        {/* Modules Placeholder */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <StatCard label="Cuentas" value="662" />
+        <StatCard label="Partidas" value="120" />
+        <StatCard label="Movimientos" value="423" />
+        <StatCard label="Meses" value="21" />
+      </div>
+
+      {/* Modules */}
+      <div className="space-y-3">
+        <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">
+          Módulos
+        </h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            "Catálogo de Cuentas",
-            "Libro Diario",
-            "Bancos y Cheques",
-            "IVA y Retenciones",
-            "Mayor General",
-            "Balances",
-            "Estado de Resultados",
-            "Reportes",
-          ].map((name) => (
+            { name: "Catálogo de Cuentas", icon: "📋" },
+            { name: "Libro Diario", icon: "📖" },
+            { name: "Bancos y Cheques", icon: "🏦" },
+            { name: "IVA y Retenciones", icon: "🧾" },
+            { name: "Mayor General", icon: "📊" },
+            { name: "Balances", icon: "⚖️" },
+            { name: "Estado de Resultados", icon: "📈" },
+            { name: "Reportes", icon: "📑" },
+          ].map((mod) => (
             <div
-              key={name}
-              className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-3 text-center text-sm text-zinc-500 hover:border-zinc-700 transition-colors cursor-not-allowed"
+              key={mod.name}
+              className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 hover:border-zinc-700 transition-colors cursor-pointer"
             >
-              {name}
+              <div className="text-lg mb-2">{mod.icon}</div>
+              <p className="text-sm text-zinc-300">{mod.name}</p>
             </div>
           ))}
         </div>
-
-        <p className="text-center text-xs text-zinc-600">
-          ContPlus v1.0 — Reconstruido desde Visual FoxPro 9.0 + SQL Server
-        </p>
       </div>
     </main>
+  );
+}
+
+function StatCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+      <div className="text-xs text-zinc-500">{label}</div>
+      <div className="text-2xl font-bold text-white mt-1">{value}</div>
+    </div>
   );
 }
