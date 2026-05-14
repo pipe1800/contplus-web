@@ -1,7 +1,7 @@
 "use client";
 
-import { supabase } from "@/lib/supabase";
-import { useState } from "react";
+import { createBrowserClient } from "@supabase/ssr";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
@@ -10,6 +10,15 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  const supabase = useMemo(
+    () =>
+      createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
+      ),
+    []
+  );
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -25,8 +34,8 @@ export default function LoginPage() {
       setError("Credenciales inválidas");
       setLoading(false);
     } else {
-      router.push("/");
-      router.refresh();
+      // Force a full navigation so cookies are properly set
+      window.location.href = "/";
     }
   }
 
@@ -64,9 +73,7 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <p className="text-sm text-red-400 bg-red-500/10 rounded-lg px-3 py-2">
-              {error}
-            </p>
+            <p className="text-sm text-red-400 bg-red-500/10 rounded-lg px-3 py-2">{error}</p>
           )}
 
           <button
@@ -78,9 +85,7 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="text-center text-xs text-zinc-600">
-          Acceso solo por invitación
-        </p>
+        <p className="text-center text-xs text-zinc-600">Acceso solo por invitación</p>
       </div>
     </main>
   );
